@@ -1,0 +1,34 @@
+# Dependencies
+**/node_modules/
+
+# Builds
+**/dist/
+frontend/dist-ssr/
+frontend/.output/
+frontend/.vinxi/
+frontend/.tanstack/
+frontend/.nitro/
+
+# Env & secrets — do not push real keys (add .env.example manually if you document vars)
+.env
+.env.*
+!.env.example
+*.local
+
+# Backend runtime data & uploads
+backend/data/
+backend/uploads/
+
+# Cloudflare / Wrangler
+frontend/.wrangler/
+
+# Logs & OS junk
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+coverage/
