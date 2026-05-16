@@ -19,6 +19,9 @@ frontend/.nitro/
 backend/data/
 backend/uploads/
 
+# Vercel (local Nitro build output — use dashboard root `frontend`)
+frontend/.vercel/
+
 # Cloudflare / Wrangler
 frontend/.wrangler/
 
