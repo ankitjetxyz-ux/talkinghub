@@ -1,3 +1,4 @@
+import { Ghost } from "lucide-react";
 import type { Profile } from "@/hooks/useChat";
 import { usernameLabel } from "@/lib/display";
 import { Avatar } from "@/components/Avatar";
@@ -6,10 +7,11 @@ interface Props {
   other: Profile | null;
   groupName?: string | null;
   onOpenMenu: () => void;
+  onOpenDecoy?: () => void;
   onSignOut?: () => void;
 }
 
-export function ChatHeader({ other, groupName, onOpenMenu, onSignOut }: Props) {
+export function ChatHeader({ other, groupName, onOpenMenu, onOpenDecoy, onSignOut }: Props) {
   const label = groupName ?? (other ? usernameLabel(other) : "Select a chat");
   const dmPeer = groupName ? null : other;
 
@@ -32,6 +34,18 @@ export function ChatHeader({ other, groupName, onOpenMenu, onSignOut }: Props) {
         ) : null}
 
         <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-foreground">{label}</p>
+
+        {onOpenDecoy ? (
+          <button
+            type="button"
+            onClick={onOpenDecoy}
+            className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label="Open Snapchat cover"
+            title="Snapchat cover"
+          >
+            <Ghost className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+        ) : null}
 
         <button
           type="button"

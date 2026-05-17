@@ -9,7 +9,9 @@ import type { ReactNode } from "react";
  * Falls back to plain bright text if no wrappers are present.
  */
 export function formatMessage(text: string): ReactNode {
-  const match = text.match(/^(\s*[A-Z][A-Z0-9_]*::\s*)?([\s\S]*?)(\s*::[a-zA-Z0-9_]+\s*)?$/);
+  const match = text.match(
+    /^(\s*[A-Z][A-Z0-9_]*::\s*)?([\s\S]*?)(\s*::[a-zA-Z0-9_]+\s*)?$/,
+  );
 
   if (!match || (!match[1] && !match[3])) {
     return <span className="text-sm text-foreground">{text}</span>;

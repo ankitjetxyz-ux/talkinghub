@@ -1,22 +1,26 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import {
-  api,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
   connectRealtime,
   createSession,
-  getStoredToken,
   requestNotificationPermission,
-  setStoredToken,
 } from "@/lib/api";
+import { supabase } from "@/integrations/supabase/client";
+import { teardownArchiveRealtime } from "@/lib/archiveRealtime";
 import { showArchiveNotification } from "@/lib/notifications";
-import type { ArchiveNotification } from "@/lib/notifications";
-import type { AuthUser, Session } from "@/lib/api-types";
+import { buildNotificationPayload } from "@/lib/notificationPayload";
+import type { Session } from "@/lib/api-types";
 
 interface AuthContextValue {
   session: Session | null;
-  user: AuthUser | null;
+  user: import("@/lib/api-types").AuthUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  setSessionFromAuth: (token: string, user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -26,22 +30,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getStoredToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    api
-      .me()
-      .then(({ user }) => {
-        setSession(createSession(token, user));
-      })
-      .catch(() => {
-        setStoredToken(null);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, sess) => {
+      if (sess?.user) {
+        setSession(
+          createSession(sess.access_token, {
+            id: sess.user.id,
+            email: sess.user.email ?? "",
+          }),
+        );
+      } else {
+        void teardownArchiveRealtime();
         setSession(null);
-      })
-      .finally(() => setLoading(false));
+      }
+    });
+
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (s?.user) {
+        setSession(
+          createSession(s.access_token, {
+            id: s.user.id,
+            email: s.user.email ?? "",
+          }),
+        );
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -52,15 +69,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const disconnect = connectRealtime((type, payload) => {
       if (type === "message") {
         const data = payload as {
-          notification?: ArchiveNotification;
-          message?: { sender_id: string };
+          message?: {
+            sender_id: string;
+            original_message?: string;
+            content?: string;
+          };
         };
+        const snippet =
+          data.message?.original_message?.trim() ||
+          data.message?.content?.trim() ||
+          "";
         if (
-          data.notification &&
           data.message?.sender_id &&
-          data.message.sender_id !== session.user.id
+          data.message.sender_id !== session.user.id &&
+          snippet
         ) {
-          showArchiveNotification(data.notification);
+          showArchiveNotification(buildNotificationPayload(snippet));
         }
       }
     });
@@ -69,13 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const signOut = async () => {
-    setStoredToken(null);
+    await teardownArchiveRealtime();
+    await supabase.auth.signOut();
     setSession(null);
-  };
-
-  const setSessionFromAuth = (token: string, user: AuthUser) => {
-    setStoredToken(token);
-    setSession(createSession(token, user));
   };
 
   return (
@@ -85,7 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: session?.user ?? null,
         loading,
         signOut,
-        setSessionFromAuth,
       }}
     >
       {children}

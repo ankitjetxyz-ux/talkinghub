@@ -11,7 +11,12 @@ interface Props {
   onUpdated: (profile: Profile) => void;
 }
 
-export function ProfileEditDialog({ profile, open, onClose, onUpdated }: Props) {
+export function ProfileEditDialog({
+  profile,
+  open,
+  onClose,
+  onUpdated,
+}: Props) {
   const [name, setName] = useState(profile.display_name);
   const [username, setUsername] = useState(profile.handle);
   const [busy, setBusy] = useState(false);
@@ -52,12 +57,14 @@ export function ProfileEditDialog({ profile, open, onClose, onUpdated }: Props) 
     }
     setAvatarBusy(true);
     try {
-      const { url } = await api.uploadMedia(file);
+      const { url } = await api.uploadAvatar(file);
       const updated = await api.updateProfile({ avatar_url: url });
       onUpdated(updated);
       toast.success("Photo updated");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not upload photo");
+      toast.error(
+        err instanceof Error ? err.message : "Could not upload photo",
+      );
     } finally {
       setAvatarBusy(false);
     }
@@ -70,7 +77,9 @@ export function ProfileEditDialog({ profile, open, onClose, onUpdated }: Props) 
       onUpdated(updated);
       toast.success("Photo removed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not remove photo");
+      toast.error(
+        err instanceof Error ? err.message : "Could not remove photo",
+      );
     } finally {
       setAvatarBusy(false);
     }
@@ -86,13 +95,19 @@ export function ProfileEditDialog({ profile, open, onClose, onUpdated }: Props) 
         onSubmit={save}
         className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-xl"
       >
-        <h2 className="text-lg font-semibold text-foreground">Profile &amp; settings</h2>
+        <h2 className="text-lg font-semibold text-foreground">
+          Profile &amp; settings
+        </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Your username and photo can be visible to others in chats.
         </p>
 
         <div className="mt-5 flex flex-col items-center gap-3">
-          <Avatar avatarUrl={profile.avatar_url} handle={profile.handle} size="lg" />
+          <Avatar
+            avatarUrl={profile.avatar_url}
+            handle={profile.handle}
+            size="lg"
+          />
           <div className="flex flex-wrap items-center justify-center gap-2">
             <label className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted">
               {avatarBusy ? "Working…" : "Change photo"}
@@ -131,7 +146,11 @@ export function ProfileEditDialog({ profile, open, onClose, onUpdated }: Props) 
           <span className="mb-2 block text-sm font-medium">Username</span>
           <input
             value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+            onChange={(e) =>
+              setUsername(
+                e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
+              )
+            }
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
             required
           />

@@ -1,33 +1,86 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { api, connectRealtime } from "@/lib/api";
+import type { ArchiveNotification } from "@/lib/notifications";
 import type {
   ConversationListItem,
   DbMessage,
-  DbMessageReaction,
   Profile,
 } from "@/lib/api-types";
 
 export type { Profile, DbMessage, ConversationListItem };
 
+const PROFILE_HARD_DEADLINE_MS = 28_000;
+const PROFILE_POLL_MS = 220;
+
+/**
+ * Loads `profiles` row; uses `archive_ensure_profile` RPC once per attempt if REST read fails,
+ * until deadline (covers missing trigger / race after Google sign-in).
+ */
+async function loadMyProfileRow(userId: string): Promise<Profile> {
+  const deadline = Date.now() + PROFILE_HARD_DEADLINE_MS;
+
+  async function attempt(): Promise<Profile> {
+    try {
+      return await api.getProfile(userId);
+    } catch {
+      await api.ensureProfileRow();
+      const p = await api.getProfile(userId);
+      return p;
+    }
+  }
+
+  let lastErr = new Error("Profile not loaded");
+  while (Date.now() < deadline) {
+    try {
+      return await attempt();
+    } catch (e) {
+      lastErr = e instanceof Error ? e : lastErr;
+      await new Promise((r) => setTimeout(r, PROFILE_POLL_MS));
+    }
+  }
+
+  throw lastErr;
+}
+
 export function useMyProfile(userId: string | undefined) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [phase, setPhase] = useState<"idle" | "pending" | "resolved" | "error">(
+    "idle",
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!userId) {
       setProfile(null);
+      setPhase("idle");
+      setErrorMessage(null);
       return;
     }
     let cancelled = false;
-    api
-      .getProfile(userId)
-      .then((data) => {
-        if (!cancelled) setProfile(data);
+
+    setPhase("pending");
+    setErrorMessage(null);
+
+    loadMyProfileRow(userId)
+      .then((p) => {
+        if (!cancelled) {
+          setProfile(p);
+          setPhase("resolved");
+        }
       })
-      .catch(() => {
-        if (!cancelled) setProfile(null);
+      .catch((e: unknown) => {
+        console.warn("[useMyProfile]", e);
+        if (!cancelled) {
+          setProfile(null);
+          setPhase("error");
+          setErrorMessage(
+            e instanceof Error ? e.message : "Could not load profile",
+          );
+        }
       });
+
     return () => {
       cancelled = true;
     };
@@ -35,6 +88,8 @@ export function useMyProfile(userId: string | undefined) {
 
   const applyProfile = useCallback((next: Profile) => {
     setProfile(next);
+    setPhase("resolved");
+    setErrorMessage(null);
   }, []);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
@@ -44,12 +99,24 @@ export function useMyProfile(userId: string | undefined) {
     const disconnect = connectRealtime((type, payload) => {
       if (type !== "profile_updated") return;
       const { profile } = payload as { profile: Profile };
-      if (profile.id === userId) setProfile(profile);
+      if (profile.id === userId) {
+        setProfile(profile);
+        setPhase("resolved");
+        setErrorMessage(null);
+      }
     });
     return disconnect;
   }, [userId]);
 
-  return { profile, applyProfile, reload };
+  const loadingProfile = phase === "pending";
+
+  return {
+    profile,
+    applyProfile,
+    reload,
+    loadingProfile,
+    profileError: phase === "error" ? errorMessage : null,
+  };
 }
 
 export function useConversations(userId: string | undefined) {
@@ -75,17 +142,13 @@ export function useConversations(userId: string | undefined) {
 
   useEffect(() => {
     if (!userId) return;
-    const disconnect = connectRealtime((type, payload) => {
-      if (type === "messages" || type === "conversation_members") {
+    const disconnect = connectRealtime((type) => {
+      if (
+        type === "messages" ||
+        type === "conversation_members" ||
+        type === "profile_updated"
+      )
         void load();
-        return;
-      }
-      if (type === "profile_updated") {
-        const { profile } = payload as { profile: Profile };
-        setItems((prev) =>
-          prev.map((it) => (it.other?.id === profile.id ? { ...it, other: profile } : it)),
-        );
-      }
     });
     return disconnect;
   }, [userId, load]);
@@ -98,110 +161,104 @@ export function useMessages(conversationId: string | undefined) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!conversationId) {
-      setMessages([]);
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
-    setLoading(true);
-    api
-      .getMessages(conversationId)
-      .then((data) => {
-        if (!cancelled) {
-          setMessages(
-            data.map((m) => ({ ...m, reactions: m.reactions ?? [] })),
-          );
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMessages([]);
-          setLoading(false);
-        }
-      });
+    async function refresh() {
+      if (!conversationId) {
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const msgs = await api.getMessages(conversationId);
+        if (!cancelled) setMessages(msgs);
+      } catch {
+        if (!cancelled) setMessages([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void refresh();
+
+    const disconnect = connectRealtime((type, payload) => {
+      if (!conversationId) return;
+      if (type === "messages") {
+        void refresh();
+        return;
+      }
+      if (type === "message") {
+        const msg = (
+          payload as { message?: { conversation_id?: string } }
+        ).message;
+        if (msg?.conversation_id === conversationId) void refresh();
+        return;
+      }
+      if (type === "message_deleted") {
+        const cid = (
+          payload as {
+            conversation_id?: string;
+          }
+        ).conversation_id;
+        if (cid === conversationId) void refresh();
+        return;
+      }
+      if (type === "message_reaction") {
+        const cid = (
+          payload as {
+            conversation_id?: string;
+          }
+        ).conversation_id;
+        if (cid === conversationId) void refresh();
+      }
+    });
+
     return () => {
       cancelled = true;
+      disconnect();
     };
   }, [conversationId]);
 
-  useEffect(() => {
-    if (!conversationId) return;
-    const disconnect = connectRealtime((type, payload) => {
-      if (type === "message") {
-        const data = payload as { message: DbMessage };
-        if (data.message.conversation_id !== conversationId) return;
-        const msg = {
-          ...data.message,
-          reactions: data.message.reactions ?? [],
-        };
-        setMessages((prev) =>
-          prev.find((x) => x.id === msg.id)
-            ? prev.map((x) =>
-                x.id === msg.id ? { ...x, ...msg, reactions: msg.reactions } : x,
-              )
-            : [...prev, msg],
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!conversationId) return;
+      try {
+        await api.toggleMessageReaction(messageId, emoji);
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Could not update reaction",
         );
       }
-      if (type === "message_reaction") {
-        const d = payload as {
-          conversation_id: string;
-          message_id: string;
-          reactions: DbMessageReaction[];
-        };
-        if (d.conversation_id !== conversationId) return;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === d.message_id ? { ...m, reactions: d.reactions } : m)),
-        );
-      }
-      if (type === "message_deleted") {
-        const d = payload as { conversation_id: string; message_id: string };
-        if (d.conversation_id !== conversationId) return;
-        setMessages((prev) => prev.filter((m) => m.id !== d.message_id));
-      }
-    });
-    return disconnect;
-  }, [conversationId]);
+    },
+    [conversationId],
+  );
+
+  const deleteMessage = useCallback(async (messageId: string) => {
+    try {
+      await api.deleteMessage(messageId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete");
+    }
+  }, []);
 
   const send = useCallback(
     async (
-      content: string,
-      _senderId: string,
+      text: string,
+      _userId: string,
       media?: { url: string; media_type: string },
-    ) => {
-      if (!conversationId) return;
-      const text = content.trim();
-      if (!text && !media) return;
+    ): Promise<{
+      message: DbMessage;
+      notification: ArchiveNotification;
+    }> => {
+      if (!conversationId) throw new Error("No conversation selected");
       return api.sendMessage({
         conversation_id: conversationId,
         content: text,
-        media_url: media?.url ?? null,
-        media_type: media?.media_type ?? null,
+        media_url: media?.url,
+        media_type: media?.media_type,
       });
     },
     [conversationId],
   );
 
-  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
-    try {
-      const result = await api.toggleMessageReaction(messageId, emoji);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, reactions: result.reactions } : m)),
-      );
-    } catch {
-      toast.error("Could not update reaction");
-    }
-  }, []);
-
-  const deleteMessageFn = useCallback(async (messageId: string) => {
-    try {
-      await api.deleteMessage(messageId);
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-    } catch {
-      toast.error("Could not delete message");
-    }
-  }, []);
-
-  return { messages, loading, send, toggleReaction, deleteMessage: deleteMessageFn };
+  return { messages, loading, send, toggleReaction, deleteMessage };
 }

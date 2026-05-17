@@ -3,7 +3,11 @@ import { SITE_LOGO_SRC, SITE_NAME } from "@/lib/brand";
 const logoClass =
   "object-cover object-[center_22%] ring-white/12 shadow-lg select-none pointer-events-none";
 
-export function BrandMark({ variant = "hero" }: { variant?: "hero" | "inline" | "compact" }) {
+export function BrandMark({
+  variant = "hero",
+}: {
+  variant?: "hero" | "inline" | "compact";
+}) {
   if (variant === "compact") {
     return (
       <div className="flex flex-col items-center gap-3">
@@ -14,7 +18,9 @@ export function BrandMark({ variant = "hero" }: { variant?: "hero" | "inline" | 
           height={96}
           className={`size-24 rounded-xl sm:size-28 ${logoClass} ring-2`}
         />
-        <p className="text-lg font-bold lowercase tracking-tight text-foreground">{SITE_NAME}</p>
+        <p className="text-lg font-bold lowercase tracking-tight text-foreground">
+          {SITE_NAME}
+        </p>
       </div>
     );
   }
@@ -29,7 +35,9 @@ export function BrandMark({ variant = "hero" }: { variant?: "hero" | "inline" | 
           height={40}
           className={`size-10 shrink-0 rounded-xl ${logoClass} ring-1`}
         />
-        <span className="text-base font-semibold lowercase tracking-tight text-foreground">{SITE_NAME}</span>
+        <span className="text-base font-semibold lowercase tracking-tight text-foreground">
+          {SITE_NAME}
+        </span>
       </div>
     );
   }

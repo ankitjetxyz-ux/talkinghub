@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,46 +9,52 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-type Mode = "signin" | "signup";
+function oauthErrorToast() {
+  if (typeof window === "undefined") return;
+  const sp = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.replace(/^#/, "");
+  const h = new URLSearchParams(hash.includes("=") ? hash : "");
+  const err =
+    sp.get("error_description") ??
+    sp.get("error_code") ??
+    sp.get("error") ??
+    h.get("error_description") ??
+    h.get("error");
+  if (!err) return;
+  toast.error(decodeURIComponent(err.replace(/\+/g, " ")));
+  const clean = `${window.location.pathname}${window.location.hash.split("?")[0] ?? ""}`;
+  window.history.replaceState({}, "", clean);
+}
 
 function AuthPage() {
-  const { user, loading, setSessionFromAuth } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    oauthErrorToast();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const { search, hash, pathname } = window.location;
+    if (search || (hash && hash.length > 1)) {
+      window.history.replaceState({}, "", pathname);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!loading && user) navigate({ to: "/", replace: true });
   }, [loading, user, navigate]);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function continueWithGoogle() {
     setBusy(true);
     try {
-      if (mode === "signup") {
-        const cleanHandle = handle.toLowerCase().replace(/[^a-z0-9_]/g, "");
-        if (!cleanHandle) throw new Error("Username can only use letters, numbers, and underscores.");
-        if (!displayName.trim()) throw new Error("Name is required.");
-        const { token, user: u } = await api.register({
-          email,
-          password,
-          display_name: displayName.trim(),
-          handle: cleanHandle,
-        });
-        setSessionFromAuth(token, u);
-        toast.success("Account created");
-      } else {
-        const { token, user: u } = await api.login({ email, password });
-        setSessionFromAuth(token, u);
-        toast.success("Signed in");
-      }
+      await api.signInWithGoogle();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
+      toast.error(
+        err instanceof Error ? err.message : "Could not start Google sign-in",
+      );
       setBusy(false);
     }
   }
@@ -59,97 +65,43 @@ function AuthPage() {
         <div className="mb-8 text-center">
           <BrandMark variant="compact" />
           <p className="mt-5 text-sm text-muted-foreground">
-            {mode === "signin" ? "Sign in to continue" : "Create your account"}
+            Sign in with your Google account to use Talkinghub.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-5">
-          {mode === "signup" && (
-            <>
-              <Field
-                label="Name"
-                value={displayName}
-                onChange={setDisplayName}
-                placeholder="Your name"
-                autoComplete="name"
-              />
-              <Field
-                label="Username"
-                value={handle}
-                onChange={(v) => setHandle(v.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                placeholder="username"
-                autoComplete="off"
-              />
-            </>
-          )}
-          <Field
-            label="Email"
-            type="email"
-            value={email}
-            onChange={setEmail}
-            placeholder="you@example.com"
-            autoComplete="email"
-            required
-          />
-          <Field
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            placeholder="••••••••"
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            required
-          />
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-xl bg-foreground py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-        </form>
-
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          {mode === "signin" ? "No account? " : "Have an account? "}
-          <button
-            type="button"
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            className="font-medium text-foreground hover:underline"
-          >
-            {mode === "signin" ? "Sign up" : "Sign in"}
-          </button>
-        </p>
+        <button
+          type="button"
+          disabled={busy || loading}
+          onClick={() => void continueWithGoogle()}
+          className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-border/80 bg-background py-2.5 text-sm font-semibold text-foreground transition hover:bg-muted/40 disabled:opacity-40"
+        >
+          <GoogleGlyph />
+          {busy ? "Redirecting…" : "Continue with Google"}
+        </button>
       </div>
     </div>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  ...rest
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-  autoComplete?: string;
-  required?: boolean;
-}) {
+function GoogleGlyph() {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition focus:border-border"
-        {...rest}
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path
+        fill="#FFC107"
+        d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"
       />
-    </label>
+      <path
+        fill="#FF3D00"
+        d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.196-5.238A11.907 11.907 0 0 1 24 36c-5.185 0-9.591-3.319-11.284-7.946l-6.519 5.02C9.505 39.556 16.276 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.611 20.083 42 20 24 20v8h11.303a12.04 12.04 0 0 1-4.087 5.571l6.194 5.238C43.068 39.086 46 34.086 46 24c0-1.342-.139-2.652-.389-3.917z"
+      />
+    </svg>
   );
 }

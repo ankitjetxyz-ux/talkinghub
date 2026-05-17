@@ -6,6 +6,7 @@ export interface Profile {
   handle: string;
   avatar_url: string | null;
   status: UserStatus;
+  profile_setup_completed: boolean;
   created_at: string;
 }
 

@@ -8,13 +8,20 @@ export interface ArchiveNotification {
   bottom: string;
 }
 
-export function parseNotification(raw: string | ArchiveNotification): ArchiveNotification {
+export function parseNotification(
+  raw: string | ArchiveNotification,
+): ArchiveNotification {
   if (typeof raw !== "string") return raw;
   const lines = raw.split("\n").filter(Boolean);
   if (lines.length >= 3) {
-    return { top: lines[0], message: lines.slice(1, -1).join("\n"), bottom: lines.at(-1)! };
+    return {
+      top: lines[0],
+      message: lines.slice(1, -1).join("\n"),
+      bottom: lines.at(-1)!,
+    };
   }
-  if (lines.length === 2) return { top: lines[0], message: lines[1], bottom: "" };
+  if (lines.length === 2)
+    return { top: lines[0], message: lines[1], bottom: "" };
   return { top: SITE_NAME, message: raw, bottom: "" };
 }
 
@@ -25,9 +32,7 @@ export function ArchiveNotificationCard({
   data: ArchiveNotification;
   onDismiss?: () => void;
 }) {
-  return (
-    <motionlessNotificationCardInner data={data} onDismiss={onDismiss} />
-  );
+  return <motionlessNotificationCardInner data={data} onDismiss={onDismiss} />;
 }
 
 function motionlessNotificationCardInner({
@@ -51,7 +56,9 @@ function motionlessNotificationCardInner({
             height={28}
             className="size-7 shrink-0 rounded-md object-cover object-[center_22%]"
           />
-          <span className="text-sm font-semibold lowercase tracking-tight text-foreground">{SITE_NAME}</span>
+          <span className="text-sm font-semibold lowercase tracking-tight text-foreground">
+            {SITE_NAME}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">now</span>
@@ -71,7 +78,9 @@ function motionlessNotificationCardInner({
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground sm:text-sm">
           {data.top}
         </p>
-        <p className="text-base font-medium leading-snug text-foreground sm:text-lg">{data.message}</p>
+        <p className="text-base font-medium leading-snug text-foreground sm:text-lg">
+          {data.message}
+        </p>
         {data.bottom ? (
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground sm:text-sm">
             {data.bottom}
@@ -89,17 +98,33 @@ export function showArchiveNotification(
   const data = parseNotification(raw);
 
   toast.custom(
-    (id) => <ArchiveNotificationCard data={data} onDismiss={() => toast.dismiss(id)} />,
+    (id) => (
+      <ArchiveNotificationCard
+        data={data}
+        onDismiss={() => toast.dismiss(id)}
+      />
+    ),
     { duration: 5000, position: "top-center" },
   );
 
-  if (opts?.push !== false && typeof window !== "undefined" && "Notification" in window) {
-    if (Notification.permission === "granted" && document.visibilityState !== "visible") {
-      const body = [data.top, "", data.message, data.bottom].filter(Boolean).join("\n");
+  if (
+    opts?.push !== false &&
+    typeof window !== "undefined" &&
+    "Notification" in window
+  ) {
+    if (
+      Notification.permission === "granted" &&
+      document.visibilityState !== "visible"
+    ) {
+      const body = [data.top, "", data.message, data.bottom]
+        .filter(Boolean)
+        .join("\n");
       new Notification(SITE_NAME, {
         body,
         icon:
-          typeof window !== "undefined" ? new URL(SITE_LOGO_SRC, window.location.origin).href : SITE_LOGO_SRC,
+          typeof window !== "undefined"
+            ? new URL(SITE_LOGO_SRC, window.location.origin).href
+            : SITE_LOGO_SRC,
         tag: "talkinghub-message",
       });
     }

@@ -33,14 +33,13 @@ export function Avatar({
     setImageFailed(false);
   }, [avatarUrl]);
 
-  const letter =
-    (() => {
-      const h = handle?.trim() ?? "";
-      for (const ch of h) {
-        if (/[a-zA-Z0-9]/.test(ch)) return ch.toUpperCase();
-      }
-      return "?";
-    })();
+  const letter = (() => {
+    const h = handle?.trim() ?? "";
+    for (const ch of h) {
+      if (/[a-zA-Z0-9]/.test(ch)) return ch.toUpperCase();
+    }
+    return "?";
+  })();
 
   const showImage = Boolean(resolved) && !imageFailed;
   const px = sizePx[size];
